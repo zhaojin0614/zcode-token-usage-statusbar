@@ -1,26 +1,18 @@
 @echo off
 chcp 65001 >nul
-title ZCode Token 状态条 - 重装注入 + 用量保留补丁
+title ZCode Token 状态条 - 重装注入
 setlocal
 rem PYTHON 路径按自己机器修改; 找不到时会回退到 PATH 里的 python
 set "PYTHON=D:\APPS\Python\python.exe"
 if not exist "%PYTHON%" set "PYTHON=python"
 
 echo ==================================================
-echo   ZCode Token 状态条 - 重装注入 + 用量保留补丁
-echo   适用场景: ZCode 自动升级后状态条消失 / 用量补丁被覆盖
+echo   ZCode Token 状态条 - 重装注入
+echo   适用场景: ZCode 自动升级后状态条消失
 echo ==================================================
 echo.
 
 "%PYTHON%" "%~dp0reinject_statusbar.py"
-
-echo.
-echo ==================================================
-echo   用量统计保留补丁 (usage 三表不自动清理)
-echo ==================================================
-echo.
-
-"%PYTHON%" "%~dp0patch_usage_retention.py"
 
 echo.
 echo --------------------------------------------------
