@@ -37,6 +37,10 @@ t.beforeTime??Date.now()-<变量>   →   t.beforeTime??Date.now()-3155760000000
 - 自动备份原文件为 `zcode.cjs.orig.bak`；打完补丁用 `node --check` 校验语法，失败自动还原
 - 不写死混淆变量名（随版本变化），按结构化模式定位；结构变化时拒绝动手并提示人工复核
 
+> **2026-11-12 更新：ZCode 3.18.2 已官方移除用量三表剪枝**（三表 DELETE 语句全部消失，实测数据库停止清理，#1299 诉求已实现）。
+> 从该版本起无需补丁，脚本会自动识别并显示 `official-no-prune`；仅当未来版本重新引入剪枝时才会再次显示 `patchable`。
+> 旧版 `zcode.cjs.orig.bak` 备份属于历史版本，`--restore` 会在"当前文件未打补丁"时拒绝执行以防止降级，确认无用后可手动删除。
+
 ```bash
 python patch_usage_retention.py            # 打补丁（幂等，需重启 ZCode 生效）
 python patch_usage_retention.py --check    # 只查看当前状态

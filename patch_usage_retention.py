@@ -1,18 +1,21 @@
 # -*- coding: utf-8 -*-
 """ZCode 用量统计保留期补丁（usage retention patch）。
 
-背景: ZCode 把 ~/.zcode/cli/db/db.sqlite 的 usage 三表(model_usage/turn_usage/tool_usage)
-硬编码为只保留 30 天——每次写入用量后立即执行 delete from ... where started_at < now-30d,
-用户无法配置或关闭, 30 天前的逐请求用量被静默永久删除(参见 zai-org/feedback#1299)。
+背景: 旧版 ZCode 把 ~/.zcode/cli/db/db.sqlite 的 usage 三表(model_usage/turn_usage/
+tool_usage)硬编码为只保留 30 天——每次写入用量后立即执行 delete ... where started_at
+< now-30d, 用户无法配置或关闭, 30 天前的逐请求用量被静默永久删除
+(参见 zai-org/feedback#1299)。
 
-本补丁把剪枝默认截止时间从 "now-30天" 改为 "now-100年":
+2026-11-12 发布的 ZCode 3.18.2 已官方移除该剪枝(三表 DELETE 语句全部消失,
+数据库实测停止清理), 因此新版本无需补丁; 本脚本会自动识别"官方已修复"状态。
+对旧版本, 本补丁把剪枝默认截止时间从 "now-30天" 改为 "now-100年":
   - 剪枝函数仍保留 beforeTime 显式传参能力(官方若有"手动清理用量"功能不受影响);
   - 用量三表从此不再被自动清理, 其它行为(session/part 保留、model-io 轮转等)一律不动;
   - 用量三表极小(实测 30 天约 0.2MB), 长期保留无体积压力。
 
 用法: python patch_usage_retention.py            # 打补丁(幂等, 自动备份, node --check 校验)
       python patch_usage_retention.py --check    # 只检查当前状态, 不修改
-      python patch_usage_retention.py --restore  # 从备份还原原始文件
+      python patch_usage_retention.py --restore  # 从备份还原原始文件(仅当当前文件确已打补丁)
 """
 import os
 import re
@@ -41,6 +44,12 @@ CENTURY_MS = "3155760000000"
 PATTERN = re.compile(r"(t\.beforeTime\?\?Date\.now\(\)-)([A-Za-z_$][\w$]*)")
 MARKER = CENTURY_MS  # 已打补丁的判定标记
 
+# 旧版剪枝语句: delete from model_usage/turn_usage/tool_usage(大小写不敏感)。
+# 三条都找不到 = 这个版本根本没有用量表自动清理(如 3.18.2+ 官方已修复)。
+USAGE_DELETE_RE = re.compile(
+    r"delete\s+from\s+(model_usage|turn_usage|tool_usage)\b", re.I
+)
+
 
 def check_running():
     """检测 ZCode 是否正在运行(仅提示, 补丁本身写入不受锁影响)。"""
@@ -59,6 +68,9 @@ def status(data_text):
         return "patched"
     if PATTERN.search(data_text):
         return "patchable"
+    if not USAGE_DELETE_RE.search(data_text):
+        # 整个 bundle 里没有任何用量三表的 delete 语句 → 该版本官方已移除自动清理
+        return "official-no-prune"
     return "unknown"
 
 
@@ -81,13 +93,22 @@ def main():
         if not bak.exists():
             print(f"[X] 没有备份文件: {bak}")
             return 1
+        if st != "patched":
+            print(f"[X] 当前文件未打补丁(状态: {st}), 无需还原。")
+            print(f"    备份 {bak.name} 来自旧版本, 用它覆盖当前文件等于降级, 已拒绝执行。")
+            print("    (确认不再需要旧备份时可手动删除该 .orig.bak 文件)")
+            return 1
         shutil.copy2(bak, ZCODE_CJS)
         print(f"[OK] 已从备份还原: {bak} -> {ZCODE_CJS}")
         print("     重启 ZCode 后恢复官方默认行为(30 天清理)。")
         return 0
 
     print(f"目标: {ZCODE_CJS}")
-    print(f"状态: {st}" + ("(已打补丁)" if st == "patched" else ""))
+    print(f"状态: {st}")
+    if st == "official-no-prune":
+        print("[OK] 当前 ZCode 版本已无用量三表自动清理(3.18.2 起官方已修复), 无需补丁。")
+        print("     (若未来版本重新引入剪枝, 本脚本会重新显示为 patchable)")
+        return 0
     if st == "unknown":
         print("[X] 未定位到剪枝默认值 (t.beforeTime??Date.now()-<var>)。")
         print("    ZCode 版本结构可能已变化, 请人工复核后再处理。")
